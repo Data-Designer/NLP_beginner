@@ -105,14 +105,15 @@ def generate_batch(batch_size, num_skips, skip_window):
         data_index = (data_index + 1) % len(data)
 # 详细解释这一部分
     for i in range(batch_size // num_skips):
-        target = skip_window
-        targets_to_avoid = [skip_window]
-        for j in range(num_skips):
-            while target in targets_to_avoid:
-                target = random.randint(0, span - 1)
-            targets_to_avoid.append(target)
-            batch[i * num_skips + j] = buffer[skip_window]
-            labels[i * num_skips + j, 0] = buffer[target]
+        target = skip_window #比如传进来的是2，target==2
+        targets_to_avoid = [skip_window] # targets_to_avoid==[2]
+        for j in range(num_skips): #随机选择num_skips条数据
+            while target in targets_to_avoid: # 随机选windows中一个词
+                target = random.randint(0, span - 1) # 比如3
+            targets_to_avoid.append(target) # [2,3]
+            # 逻辑就是[2,2,2]->[1,3,4]
+            batch[i * num_skips + j] = buffer[skip_window] # 中心词重复三遍
+            labels[i * num_skips + j, 0] = buffer[target] # 上下文中某个单词
         buffer.append(data[data_index])
         data_index = (data_index + 1) % len(data)
     return batch, labels
@@ -129,7 +130,7 @@ valid_window = 100
 valid_examples = np.random.choice(valid_window, valid_size, replace=False)
 num_sampled = 64
 
-train_inputs = tf.placeholder(tf.int32, shape=[batch_size])
+train_inputs = tf.placeholder(tf.int32, shape=[batch_size]) # 这真是个技巧，不用多输出，图只是理解使用
 train_labels = tf.placeholder(tf.int32, shape=[batch_size, 1])
 valid_dataset = tf.constant(valid_examples, dtype=tf.int32)
 
@@ -139,7 +140,7 @@ embed = tf.nn.embedding_lookup(embeddings, train_inputs)
 
 nce_weights = tf.Variable(tf.truncated_normal([vocabulary_size, embedding_size], stddev=1.0 / math.sqrt(embedding_size)))
 nce_biases = tf.Variable(tf.zeros([vocabulary_size]))
-
+# 负采样给封装好了，对于每个正例，我们随机选取num_sampled个负例进行优化。
 loss = tf.reduce_mean(tf.nn.nce_loss(weights=nce_weights, biases=nce_biases,labels=train_labels, inputs=embed, num_sampled=num_sampled, num_classes=vocabulary_size))
 
 # loss = tf.reduce_mean(
@@ -149,9 +150,9 @@ loss = tf.reduce_mean(tf.nn.nce_loss(weights=nce_weights, biases=nce_biases,labe
 
 optimizer = tf.train.GradientDescentOptimizer(1.0).minimize(loss)
 norm = tf.sqrt(tf.reduce_sum(tf.square(embeddings), 1, keep_dims=True))
-normalized_embeddings = embeddings / norm
+normalized_embeddings = embeddings / norm # 需要正则化
 valid_embeddings = tf.nn.embedding_lookup(normalized_embeddings, valid_dataset)
-similarity = tf.matmul(valid_embeddings, normalized_embeddings, transpose_b=True)
+similarity = tf.matmul(valid_embeddings, normalized_embeddings, transpose_b=True) # 余弦相似度的计算
 
 
 num_steps = 100001
